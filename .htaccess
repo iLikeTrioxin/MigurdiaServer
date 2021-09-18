@@ -1,0 +1,32 @@
+
+php_value display_errors 1
+
+RewriteEngine on
+
+# If there is file with size (-s) named like this, redirect to it
+RewriteCond %{REQUESTED_FILENAME} -s
+RewriteRule ^$ - [L]
+
+# Redirect to html files existing in Front-end folder
+RewriteCond %{DOCUMENT_ROOT}/Front\-end/$1.html -f
+RewriteRule ^(.+)$ Front-end/$1.html [L]
+
+#    # Redirect to php files existing in Front-end folder
+#    RewriteCond %{DOCUMENT_ROOT}/Front\-end/$1.php -f
+#    RewriteRule ^(.+)$ Front-end/$1.php [L]
+
+# Make post requests prettier
+RewriteCond %{REQUEST_URI} ^(.*)posts/([0-9]*) [NC]
+RewriteRule ^posts/([0-9]*)$ Front-end/post.php?postID=$1 [NC,L]
+
+# redirect to webApi
+RewriteCond %{REQUEST_URI} ^(.*)API(.*) [NC]
+RewriteRule ^API([.]*)$ API.php$1 [NC,L]
+
+# redirect to front end resources
+RewriteCond %{DOCUMENT_ROOT}/Front\-end/$1 -f
+RewriteRule ^(.*)$ Front\-end/$1 [L]
+
+# redirect to back end resources
+RewriteCond %{DOCUMENT_ROOT}/$1 -f
+RewriteRule ^([.]*)$ $1 [L]
