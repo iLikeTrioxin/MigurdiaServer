@@ -4,57 +4,28 @@ header('Access-Control-Allow-Origin: *');
 
 session_start();
 
+// This API needs so much more work that
+// for now shouldn't be even consired beta
+// PS. It's my secound php script in my life
+// If you see any bugs or things I could do better
+// please commit your change or tell me about it
+// on discord or any other media (can be found on https://www.yukiteru.xyz)
+
+//  Error codes:
+//      1 - Something went wrong (server-side) ex. can't connect to database
+//      2 - Can't find user with such name/email
+//      3 - Wrong password
+//      4 - Wrong email
+//      5 - User with this name already exists
+//      6 - User with thus email already exits
+//      7 - Session expired
+
 include('credentials.php');
+include('utils.php');
 
 $MySQLDatabase = new mysqli('localhost', $MySQLuser, $mySQLpassword, $MySQLdbname);
 
-
-//----------------------------------\
-//                                  |
-//     Essential utilities          |
-//                                  |
-//----------------------------------/
-
-function requireField(string $fieldName){
-    return isset( $_REQUEST[$fieldName] ) ? $_REQUEST[$fieldName] : criticalError("Field '$fieldName' not specified.", 1);
-}
-
-function optionalField(string $fieldName, $defaultValue=''){
-    return isset( $_REQUEST[$fieldName] ) ? $_REQUEST[$fieldName] : $defaultValue;
-}
-
-function success($result=''){
-    $tmp = array();
-
-    $tmp['success'] = 1;
-    $tmp['result' ] = $result;
-
-    die( json_encode( $tmp ) );
-}
-
-function criticalError(string $error, int $errorCode=0){
-    $tmp = array();
-    
-    $tmp['errorMsg' ] = $error;
-    $tmp['errorCode'] = $errorCode;
-    $tmp['success'  ] = 0;
-    
-    die( json_encode( $tmp ) );
-}
-
-function post(string $url, array $data, bool $json_decode=false) {
-    $ch = curl_init($url);
-
-    curl_setopt( $ch, CURLOPT_POST          , true  );
-    curl_setopt( $ch, CURLOPT_POSTFIELDS    , $data );
-    curl_setopt( $ch, CURLOPT_RETURNTRANSFER, true  );
-
-    $resp = curl_exec($ch);
-
-    curl_close($ch);
-
-    return $json_decode ? $resp : json_decode($resp);
-}
+if( $MySQLDatabase->connect_errno ) criticalError('Something went wrong, try again later.', 1);
 
 //----------------------------------\
 //                                  |
@@ -451,7 +422,7 @@ switch($cp){
         $result = getFiles($tags);
  
         switch( $result ){
-            case  1: criticalError('Session expired.', 1); break;
+            case  1: criticalError('Session expired.', 7); break;
         }
 
 		success($result);
@@ -463,27 +434,27 @@ switch($cp){
         $password = requireField('password');
 
         switch ( signin($username, $password) ) {
-            case 0:  success('')                                                      ; break;
-            case 1:  criticalError('Cannot find user with such email or username.', 1); break;
-            case 2:  criticalError('Wrong password.'                              , 2); break;
-            default: criticalError('Unknown.'                                     , 3); break;
+            case 0:  success('')                                               ; break;
+            case 1:  criticalError('Cannot find user with such name/email.', 2); break;
+            case 2:  criticalError('Wrong password.'                       , 3); break;
+            default: criticalError('Unknown.'                              , 1); break;
         }
 
         break;
     }
     case 'signup':{
-        $username = requireField('username');
-        $email    = requireField('email'   );
-        $password = requireField('password');
+        $username = requireField('username'); // This will be checked, obviously
+        $email    = requireField('email'   ); // Checked only by build-in PHP function cuz I'm lazy
+        $password = requireField('password'); // I won't check if null, if someone don't want to have password, I don't care
         
         if( !filter_var($email, FILTER_VALIDATE_EMAIL) )
-            criticalError('Invalid email adress.', 3);
+            criticalError('Invalid email adress.', 4);
 
         switch ( signup($username, $email, $password) ) {
             case 0:  success()                                  ; break;
-            case 1:  criticalError('Username already taken.', 1); break;
-            case 2:  criticalError('Email already taken.'   , 2); break;
-            default: criticalError('Unknown.'               , 4); break;
+            case 1:  criticalError('Username already taken.', 5); break;
+            case 2:  criticalError('Email already taken.'   , 6); break;
+            default: criticalError('Unknown.'               , 1); break;
         }
 
         break;
