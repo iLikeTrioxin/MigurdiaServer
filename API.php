@@ -362,6 +362,8 @@ function getFiles(array $tags=[], array $formats=[], int $limit=20){
     $response = $MySQLDatabase->query($sql);
     $result   = array();
 
+    if($response == false) return $result;
+
     while( $row = $response->fetch_assoc() ) array_push($result, $row);
 
     $response->free_result();
@@ -418,6 +420,8 @@ switch($cp){
 	case 'getfiles':{
         $tags = optionalField('tags', '[]');
         $tags = json_decode  ($tags );
+        
+        if( !is_array($tags) ) $tags = array();
 
         $result = getFiles($tags);
  
