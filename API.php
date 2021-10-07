@@ -5,13 +5,14 @@ header('Access-Control-Allow-Origin: *');
 session_start();
 
 // This API needs so much more work that
-// for now shouldn't be even consired beta
-// PS. It's my secound php script in my life
+// for now shouldn't be even considered beta
+// PS. It's my second php script in my life
 // If you see any bugs or things I could do better
 // please commit your change or tell me about it
 // on discord or any other media (can be found on https://www.yukiteru.xyz)
 
-//  Error codes:
+//  Result codes:
+//      0 - Success
 //      1 - Something went wrong (server-side) ex. can't connect to database
 //      2 - Can't find user with such name/email
 //      3 - Wrong password
@@ -19,13 +20,14 @@ session_start();
 //      5 - User with this name already exists
 //      6 - User with thus email already exits
 //      7 - Session expired
+//      8 - Bad request
 
 include('credentials.php');
 include('utils.php');
 
-$MySQLDatabase = new mysqli('localhost', $MySQLuser, $mySQLpassword, $MySQLdbname);
+$MySQLDatabase = new mysqli('localhost', $MySQLuser, $MySQLpassword, $MySQLdbname);
 
-if( $MySQLDatabase->connect_errno ) criticalError('Something went wrong, try again later.', 1);
+if( $MySQLDatabase->connect_errno ) returnResult('Something went wrong, try again later.', 1);
 
 //----------------------------------\
 //                                  |
@@ -38,23 +40,25 @@ if( $MySQLDatabase->connect_errno ) criticalError('Something went wrong, try aga
 //----------------------/
 
 // checks if user with specified email is verified and returns true or false
-function isEmailVerified($email){
+function isEmailVerified($email): int {
     global $MySQLDatabase;
 
     $sql      = "SELECT `verificationCode` FROM `Users` WHERE `email` = '$email';";
     $response = $MySQLDatabase->query($sql);
     
     if($code = $response->fetch_row())
-        return $code == 'verified' ? true : false;
+        return $code == 'verified';
     
     return false;
 }
 
 // 0 - ok 1- already done
-function sendVerificationEmail($email){
+function sendVerificationEmail($email): int{
     global $MySQLDatabase;
 
-    $code = bin2hex(random_bytes(4));
+    try {
+        $code = bin2hex(random_bytes(4));
+    } catch (Exception $e) { return 1; }
 
     $sql = "UPDATE `Users` SET `verificationCode` = '$code' WHERE `email` = '$email';";
     
@@ -62,14 +66,14 @@ function sendVerificationEmail($email){
         return 1;
 
     $msg = "Your code: $code";
-    
-    mail($email, 'Kieruzele - verification email.', $msg);
+
+    mail($email, 'Migurdia - verification email.', $msg);
 
     return 0;
 }
 
 // 0 - correct 1 - not correct
-function confirmUserEmail(string $email, $code){
+function confirmUserEmail(string $email, $code): int {
     global $MySQLDatabase;
 
     $sql = "SELECT `VerificationCode` FROM `Users` WHERE `email` = '$email';";
@@ -83,14 +87,16 @@ function confirmUserEmail(string $email, $code){
     
     $response = $MySQLDatabase->query($sql);
 
+    if(!$response) return 1;
+
     return 0;    
 }
 
-//-------------------\
-// account managment |
-//-------------------/
+//--------------------\
+// account management |
+//--------------------/
 
-function signin($username, $password){
+function signIn($username, $password): int{
     global $MySQLDatabase;
 
     $username = $MySQLDatabase->real_escape_string($username);
@@ -109,7 +115,7 @@ function signin($username, $password){
     return 0;
 }
 
-function signup($username, $email, $password){
+function signup($username, $email, $password): int{
     global $MySQLDatabase;
 
     $email    = strtolower($email);
@@ -132,7 +138,7 @@ function signup($username, $email, $password){
     return 0;
 }
 
-function isSignedIn(){
+function isSignedIn(): int{
     if( isset($_SESSION['migurdia']['userID']) )
         if(   $_SESSION['migurdia']['userID']  ) return true;
 
@@ -144,7 +150,7 @@ function isSignedIn(){
 //-------------------/
 
 // returns array(array(tagID, tag), array(tagID, tag)...)
-function getTagProposals($hint, int $limit=20){
+function getTagProposals($hint, int $limit=20): array{
     global $MySQLDatabase;
     
     $hint = $MySQLDatabase->real_escape_string($hint);
@@ -162,7 +168,7 @@ function getTagProposals($hint, int $limit=20){
     return $tags;
 }
 
-function addTags(int $fileID, array $tags){
+function addTags(int $fileID, array $tags): int{
     global $MySQLDatabase;
 
     $sql = 'INSERT INTO `FilesTags` (`FileID`, `TagID`) VALUES ';
@@ -186,16 +192,17 @@ function checkTag(string $tag){
     if($result->num_rows) return $result->fetch_assoc()['ID'];
 
     $sql = "INSERT INTO `Tags` (`Tag`) VALUES ('$tag');";
-    $result = $MySQLDatabase->query($sql);
+
+    $MySQLDatabase->query($sql);
 
     return $MySQLDatabase->insert_id;
 }
 
-//------------------//
-// Author managment //
-//------------------//
+//-------------------//
+// Author management //
+//-------------------//
 
-function doesAuthorExist(int $authorID){
+function doesAuthorExist(int $authorID): int {
     global $MySQLDatabase;
 
     $sql = "SELECT 1 from `People` WHERE `ID` = $authorID;";
@@ -206,7 +213,7 @@ function doesAuthorExist(int $authorID){
     return false;
 }
 
-function addAuthor(string $firstName, string $secondName, string $surname){
+function addAuthor(string $firstName, string $secondName, string $surname): int{
     global $MySQLDatabase;
 
     $sql    = "INSERT INTO `People` (`FirstName`, `SecondName`, `Surname`) VALUES ('$firstName', '$secondName', '$surname')";
@@ -217,11 +224,11 @@ function addAuthor(string $firstName, string $secondName, string $surname){
     return false;
 }
 
-//----------------\
-// File managment |
-//----------------/
+//-----------------\
+// File management |
+//-----------------/
 
-function optimizeURL(string $URL){
+function optimizeURL(string $URL): array{
     global $MySQLDatabase;
     
     $URL = strtolower($URL);
@@ -244,7 +251,7 @@ function optimizeURL(string $URL){
 }
 
 function verifyFileURL(string $URL){
-    // dont use https as it will ad overhead and server-client connection will be secure anyway
+    // don't use https as it will add overhead and server-client connection will be secure anyway
     $URL = str_replace('https', 'http', $URL);
 
     $stream = fopen($URL, 'rb');
@@ -255,11 +262,11 @@ function verifyFileURL(string $URL){
 
     fclose($stream);
     
-    $finfo = new finfo(FILEINFO_MIME_TYPE);
-    return $finfo->buffer($data);
+    $fileInfo = new finfo(FILEINFO_MIME_TYPE);
+    return $fileInfo->buffer($data);
 }
 
-function addFile(string $name, string $description, string $URL, int $authorID, array $tags){
+function addFile(string $name, string $description, string $URL, int $authorID, array $tags): int {
     global $MySQLDatabase;
 
     if( !isSignedIn() ) return 1;
@@ -296,15 +303,16 @@ function setFileTags(int $fileID, array $tagsIDs){
 
     // Delete all tags from current file
     $sql = "DELETE FROM `FilesTags` WHERE `FileID` = $fileID";
-    $result = $MySQLDatabase->query($sql);
+    $MySQLDatabase->query($sql);
 
     // insert new tags
     $sql = 'INSERT INTO `FilesTags` (`FileID`, `TagID`) VALUES';
     foreach($tagsIDs as $i => $tagID) $sql .= (" ($fileID, $tagID)" . ((count($tagsIDs) - 1) == $i ? ';' : ','));
-    $result = $MySQLDatabase->query($sql);
+
+    $MySQLDatabase->query($sql);
 }
 
-// getfiles v0.0.1
+// getFiles v0.0.1
 function getFiles(array $tags=[], array $formats=[], int $limit=20){
     global $MySQLDatabase;
 
@@ -336,7 +344,7 @@ function getFiles(array $tags=[], array $formats=[], int $limit=20){
                 if ( !is_numeric($tag) ) continue;
 
                 $unwantedTags .= $tag;
-                $unwantedTags .= ($lastKey = $key) ?  ')' : ',';
+                $unwantedTags .= ($lastKey == $key) ?  ')' : ',';
             }
             
             $sql .= "AND (SUM(IF(`FilesTags`.`TagID` IN $unwantedTags, 1, 0)) = 0)";
@@ -350,7 +358,7 @@ function getFiles(array $tags=[], array $formats=[], int $limit=20){
                 if( !is_numeric($tag) ) continue;
 
                 $wantedTags .=  $tag;
-                $wantedTags .= ($lastKey = $key) ?  ')' : ',';
+                $wantedTags .= ($lastKey == $key) ?  ')' : ',';
             }
             
             $sql .= "ORDER BY SUM(IF(`FilesTags`.`TagID` IN $wantedTags, 1, 0)) DESC;";
@@ -375,7 +383,7 @@ function getFiles(array $tags=[], array $formats=[], int $limit=20){
 // File format stuff |
 //-------------------/
 
-function getFileFormatProposals($hint, int $limit=20){
+function getFileFormatProposals($hint, int $limit=20): array {
     global $MySQLDatabase;
     
     $hint = $MySQLDatabase->real_escape_string($hint);
@@ -390,7 +398,7 @@ function getFileFormatProposals($hint, int $limit=20){
 
     $response->free_result();
 
-    return $fileFormats;
+    return $formats;
 }
 
 function checkFileFormat(string $MIME){
@@ -402,7 +410,7 @@ function checkFileFormat(string $MIME){
     if($result->num_rows) return $result->fetch_assoc()['ID'];
 
     $sql = "INSERT INTO `FileFormats` (`MIME`) VALUES ('$MIME');";
-    $result = $MySQLDatabase->query($sql);
+    $MySQLDatabase->query($sql);
 
     return $MySQLDatabase->insert_id;
 }
@@ -413,7 +421,7 @@ function checkFileFormat(string $MIME){
 //                               |
 //-------------------------------/
 
-# connetion purpose
+# connection purpose
 $cp = strtolower(requireField('method'));
 
 switch($cp){
@@ -426,10 +434,10 @@ switch($cp){
         $result = getFiles($tags);
  
         switch( $result ){
-            case  1: criticalError('Session expired.', 7); break;
+            case  1: returnResult('Session expired.', 7); break;
         }
 
-		success($result);
+        returnResult($result);
 
 		break;
 	}
@@ -437,11 +445,11 @@ switch($cp){
         $username = requireField('username');
         $password = requireField('password');
 
-        switch ( signin($username, $password) ) {
-            case 0:  success('')                                               ; break;
-            case 1:  criticalError('Cannot find user with such name/email.', 2); break;
-            case 2:  criticalError('Wrong password.'                       , 3); break;
-            default: criticalError('Unknown.'                              , 1); break;
+        switch ( signIn($username, $password) ) {
+            case 0:  returnResult(array("SID" => session_id()))                             ; break;
+            case 1:  returnResult('Cannot find user with such name/email.', 2); break;
+            case 2:  returnResult('Wrong password.'                       , 3); break;
+            default: returnResult('Unknown.'                              , 1); break;
         }
 
         break;
@@ -449,16 +457,16 @@ switch($cp){
     case 'signup':{
         $username = requireField('username'); // This will be checked, obviously
         $email    = requireField('email'   ); // Checked only by build-in PHP function cuz I'm lazy
-        $password = requireField('password'); // I won't check if null, if someone don't want to have password, I don't care
+        $password = requireField('password'); // I won't check if null, if someone doesn't want to have password, I don't care
         
         if( !filter_var($email, FILTER_VALIDATE_EMAIL) )
-            criticalError('Invalid email adress.', 4);
+            returnResult('Invalid email address.', 4);
 
         switch ( signup($username, $email, $password) ) {
-            case 0:  success()                                  ; break;
-            case 1:  criticalError('Username already taken.', 5); break;
-            case 2:  criticalError('Email already taken.'   , 6); break;
-            default: criticalError('Unknown.'               , 1); break;
+            case 0:  returnResult(array("SID" => session_id()))              ; break;
+            case 1:  returnResult('Username already taken.', 5); break;
+            case 2:  returnResult('Email already taken.'   , 6); break;
+            default: returnResult('Unknown.'               , 1); break;
         }
 
         break;
@@ -466,8 +474,8 @@ switch($cp){
 	case 'gettagproposals':{
 		$hint         = optionalField('hint');
 		$proposedTags = getTagProposals($hint);
-        
-        success($proposedTags);
+
+        returnResult($proposedTags);
 
 		break;
 	}
@@ -475,11 +483,11 @@ switch($cp){
 		$hint                = optionalField('hint');
 		$proposedFileFormats = getFileFormatProposals($hint);
 
-        success($proposedFileFormats);
+        returnResult($proposedFileFormats);
 
 		break;
 	}
-    case 'addfile':{
+    case 'addFile':{
         $files  = requireField('files');
         $files  = json_decode ($files, true);
         $result = array();
@@ -513,14 +521,12 @@ switch($cp){
             array_push($result, $tmp);
         }
 
-        success($result);
+        returnResult($result);
         
         break;
     }
     case 'signout': { session_destroy(); break; }
-	default: { criticalError("unknown connection purpose('$cp').", 1); break; }
+	default: { returnResult("unknown connection purpose('$cp').", 1); break; }
 }
 
 exit;
-
-?>
