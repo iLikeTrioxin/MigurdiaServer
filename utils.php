@@ -6,8 +6,8 @@
 //                                  |
 //----------------------------------/
 
-function requireField(string $fieldName){
-    return $_REQUEST[$fieldName] ?? returnResult("Field '$fieldName' not specified.", 8);
+function requiredField(string $fieldName, int $errorCode=8){
+    return $_REQUEST[$fieldName] ?? returnResult("Field '$fieldName' not specified.", $errorCode);
 }
 
 function optionalField(string $fieldName, $defaultValue=''){
@@ -21,5 +21,5 @@ function returnResult($result, int $exitCode=0){
     $tmp['exitCode'] = $exitCode;
     $tmp[ 'result' ] = $result;
 
-    die( json_encode( $tmp ) );
+    exit( json_encode( $tmp ) );
 }

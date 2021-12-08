@@ -2,6 +2,9 @@
 
 header('Access-Control-Allow-Origin: *');
 
+// additional setting to make communication with API easier
+if( isset($_REQUEST['sid']) ) session_id($_REQUEST['sid']);
+
 session_start();
 
 // This API needs so much more work that
@@ -11,7 +14,7 @@ session_start();
 // please commit your change or tell me about it
 // on discord or any other media (can be found on https://www.yukiteru.xyz)
 
-//  Result codes:
+//  Exit codes:
 //      0 - Success
 //      1 - Something went wrong (server-side) ex. can't connect to database
 //      2 - Can't find user with such name/email
@@ -45,15 +48,15 @@ function isEmailVerified($email): int {
 
     $sql      = "SELECT `verificationCode` FROM `Users` WHERE `email` = '$email';";
     $response = $MySQLDatabase->query($sql);
-    
+
     if($code = $response->fetch_row())
         return $code == 'verified';
-    
+
     return false;
 }
 
 // 0 - ok 1- already done
-function sendVerificationEmail($email): int{
+function sendVerificationEmail($email): int {
     global $MySQLDatabase;
 
     try {
@@ -61,7 +64,7 @@ function sendVerificationEmail($email): int{
     } catch (Exception $e) { return 1; }
 
     $sql = "UPDATE `Users` SET `verificationCode` = '$code' WHERE `email` = '$email';";
-    
+
     if( !( $MySQLDatabase->query($sql) ) )
         return 1;
 
@@ -82,28 +85,28 @@ function confirmUserEmail(string $email, $code): int {
 
     if($response->fetch_row()[0] != $code)
         return 1;
-    
+
     $sql = "UPDATE `Users` SET `VerificationCode` = 'verified' WHERE `Email` = '$email';";
-    
+
     $response = $MySQLDatabase->query($sql);
 
     if(!$response) return 1;
 
-    return 0;    
+    return 0;
 }
 
 //--------------------\
 // account management |
 //--------------------/
 
-function signIn($username, $password): int{
+function signIn($username, $password): int {
     global $MySQLDatabase;
 
     $username = $MySQLDatabase->real_escape_string($username);
     $password = $MySQLDatabase->real_escape_string($password);
 
     $sql      = "SELECT `ID`, (`Password` = '$password') AS `Authenticated` FROM `Users` WHERE `Username` = '$username' OR `Email` = '$username';";
-    
+
     $response = $MySQLDatabase->query($sql);
     $row      = $response->fetch_assoc();
 
@@ -115,7 +118,7 @@ function signIn($username, $password): int{
     return 0;
 }
 
-function signup($username, $email, $password): int{
+function signup($username, $email, $password): int {
     global $MySQLDatabase;
 
     $email    = strtolower($email);
@@ -129,7 +132,7 @@ function signup($username, $email, $password): int{
     $response = $MySQLDatabase->query($sql);
 
     if($row = $response->fetch_assoc()) return ( strtolower($row['Username']) == strtolower($username) ? 1 : 2 );
-    
+
     $sql = "INSERT INTO `Users` (`Username`, `Email`, `Password`, `VerificationCode`) VALUES ('$username', '$email', '$password', '00000000');";
 
     if( ! $MySQLDatabase->query($sql) )
@@ -150,40 +153,39 @@ function isSignedIn(): int{
 //-------------------/
 
 // returns array(array(tagID, tag), array(tagID, tag)...)
-function getTagProposals($hint, int $limit=20): array{
+function getTagProposals(array &$result, string $hint, int $limit=20): int {
     global $MySQLDatabase;
-    
+
     $hint = $MySQLDatabase->real_escape_string($hint);
 
     $sql = "SELECT * FROM `Tags` WHERE `tag` LIKE \"%$hint%\" LIMIT $limit;";
-    
+
     $response  = $MySQLDatabase->query($sql);
-    $tags      = array();
 
     while($row = $response->fetch_row())
-        array_push($tags, $row);
+        array_push($result, $row);
 
     $response->free_result();
 
-    return $tags;
+    return 0;
 }
 
-function addTags(int $fileID, array $tags): int{
+// returns internal error code
+function addTags(int $postID, array $tags): int {
     global $MySQLDatabase;
 
-    $sql = 'INSERT INTO `FilesTags` (`FileID`, `TagID`) VALUES ';
-    foreach($tags as $tag){
-        $sql .= "($fileID, $tag)";
-    }
+    $sql = 'INSERT INTO `PostsTags` (`PostID`, `TagID`) VALUES ';
+    foreach($tags as $tag) $sql .= "($postID, $tag)";
 
     $result = $MySQLDatabase->query($sql);
-    
-    if( !$result ) return false;
 
-    return true;
+    if( !result ) return 1;
+
+    return 0;
 }
 
-function checkTag(string $tag){
+// returns tag ID
+function checkTag(string $tag): int {
     global $MySQLDatabase;
 
     $sql = "SELECT * from `Tags` WHERE `Tag` = '$tag';";
@@ -198,142 +200,145 @@ function checkTag(string $tag){
     return $MySQLDatabase->insert_id;
 }
 
-//-------------------//
-// Author management //
-//-------------------//
-
-function doesAuthorExist(int $authorID): int {
-    global $MySQLDatabase;
-
-    $sql = "SELECT 1 from `People` WHERE `ID` = $authorID;";
-    $result = $MySQLDatabase->query($sql);
-
-    if( $result->fetch_assoc() ) return true;
-
-    return false;
-}
-
-function addAuthor(string $firstName, string $secondName, string $surname): int{
-    global $MySQLDatabase;
-
-    $sql    = "INSERT INTO `People` (`FirstName`, `SecondName`, `Surname`) VALUES ('$firstName', '$secondName', '$surname')";
-    $result = $MySQLDatabase->query($sql);
-
-    if( $result->fetch_assoc() ) return true;
-
-    return false;
-}
-
 //-----------------\
 // File management |
 //-----------------/
 
-function optimizeURL(string $URL): array{
+function optimizeURL(array &$result, string $url): int {
     global $MySQLDatabase;
+
+    $lcUrl = strtolower($url);
     
-    $URL = strtolower($URL);
-    // remove protocol prefix
-    $URL = str_replace( array('https:', 'http:'), '', $URL);
-    
-    $sql    = "SELECT * FROM `ServersPaths` WHERE REGEXP_LIKE('$URL', `Path`);";
-    $result = $MySQLDatabase->query($sql);
-    
-    $rows = array();
-    while($row = $result->fetch_assoc()){
-        array_push($rows, $row);
+    $sql = $MySQLDatabase->prepare("SELECT `ID`, `URL` FROM `Hostings` WHERE REGEXP_LIKE(?, `URL`);");
+    $sql->bind_param('s', $lcUrl);
+    $sql->execute();
+    $sql->store_result();
+    $sql->bind_result($hosting['ID'], $hosting['URL']);
+
+    if($sql->num_rows == 0){
+        $result['hosting'  ] = array('ID' => NULL, 'URL' => NULL);
+        $result['remaining'] = $url;
+        return 0;
     }
 
-    usort($rows, function($a, $b) { return strlen($b['Path']) - strlen($a['Path']); });
+    $hostings = [];
+    while($sql->fetch())
+        array_push($hostings, $hosting);
 
-    $remaining = str_replace( $rows[0]['Path'], '', $URL );
+    usort($hostings, function($a, $b) { return strlen($b['URL']) - strlen($a['URL']); });
 
-    return array('storageServer' => $rows[0], 'remaining' => $remaining);
+    $result['hosting'  ] = $hostings[0];
+    $result['remaining'] = str_replace( $hostings[0]['URL'], '', $url );
+
+    return 0;
 }
 
-function verifyFileURL(string $URL){
-    // don't use https as it will add overhead and server-client connection will be secure anyway
-    $URL = str_replace('https', 'http', $URL);
-
-    $stream = fopen($URL, 'rb');
+function verifyFileURL(string $url): int {
+    $stream = fopen($url, 'rb');
 
     if( $stream == false ) return 1;
 
     $data = fread($stream, 512);
 
     fclose($stream);
-    
+
     $fileInfo = new finfo(FILEINFO_MIME_TYPE);
-    return $fileInfo->buffer($data);
-}
 
-function addFile(string $name, string $description, string $URL, int $authorID, array $tags): int {
-    global $MySQLDatabase;
-
-    if( !isSignedIn() ) return 1;
-    
-    $MIME = verifyFileURL($URL);
-
-    if( !$MIME ) return 2;
-
-    $optimizedURL  = optimizeURL($URL);
-    $storageServer = $optimizedURL['storageServer']['ID'];
-    $remaining     = $optimizedURL['remaining'    ];
-    $postedBy      = $_SESSION['migurdia']['userID'];
-    $fileFormat    = checkFileFormat($MIME);
-
-    $sql = "INSERT INTO `Files` (`Name`, `Description`, `StorageServer`, `ServerPath`, `Author`, `PostedBy`, `FileFormat`) VALUES " .
-           "('$name', '$description', $storageServer, '$remaining', $authorID, $postedBy, $fileFormat);";
-    $result = $MySQLDatabase->query($sql);
-    
-    if( !$result ) return 3;
-
-    // setting tags
-    $file    = $MySQLDatabase->insert_id;
-    $tagsIDs = array();
-
-    foreach($tags as $tag) array_push($tagsIDs, checkTag($tag));
-
-    setFileTags($file, $tagsIDs);
+    if( !$fileInfo->buffer($data) ) return 1;
 
     return 0;
 }
 
-function setFileTags(int $fileID, array $tagsIDs){
+function addPost(string $name, string $description, string $fileUrl, string $thumbnailUrl, array $tags): int {
+    global $MySQLDatabase;
+
+    if( !isSignedIn   (             ) ) return 1;
+    if(  verifyFileURL(     $fileUrl) ) return 2;
+    if(  verifyFileURL($thumbnailUrl) ) return 3;
+
+    $optimizedFileUrl      = array();
+    $optimizedThumbnailUrl = array();
+
+    if( optimizeURL($optimizedFileUrl     ,      $fileUrl) ) return 4;
+    if( optimizeURL($optimizedThumbnailUrl, $thumbnailUrl) ) return 5;
+
+    $fileUrlHosting = $optimizedFileUrl['hosting'  ]['ID'];
+    $fileUrlPath    = $optimizedFileUrl['remaining'];
+
+    $thumbnailUrlHosting = $optimizedThumbnailUrl['hosting'  ]['ID'];
+    $thumbnailUrlPath    = $optimizedThumbnailUrl['remaining'];
+
+    $postedBy   = $_SESSION['migurdia']['userID'];
+
+    $sql = 'INSERT INTO `Posts` '
+         . '(`Name`, `Description`, `FileHosting`, `FilePath`, `ThumbnailHosting`, `ThumbnailPath`, `PostedBy`) '
+         . 'VALUES (?,?,?,?,?,?,?)';
+
+    $sql = $MySQLDatabase->prepare($sql);
+    $sql->bind_param('ssisisi',
+        $name,
+        $description,
+        $fileUrlHosting,
+        $fileUrlPath,
+        $thumbnailUrlHosting,
+        $thumbnailUrlPath,
+        $postedBy
+    );
+    
+    if( !$sql->execute() ) return 6;
+
+    // setting tags
+    $postID  = $sql->insert_id;
+    $tagsIDs = array();
+
+    foreach($tags as $tag) array_push($tagsIDs, checkTag($tag));
+
+    setPostTags($postID, $tagsIDs);
+
+    return 0;
+}
+
+function setPostTags(int $postID, array $tagsIDs): int {
     global $MySQLDatabase;
 
     // Delete all tags from current file
-    $sql = "DELETE FROM `FilesTags` WHERE `FileID` = $fileID";
+    $sql = "DELETE FROM `PostsTags` WHERE `PostID` = $postID";
     $MySQLDatabase->query($sql);
 
     // insert new tags
-    $sql = 'INSERT INTO `FilesTags` (`FileID`, `TagID`) VALUES';
-    foreach($tagsIDs as $i => $tagID) $sql .= (" ($fileID, $tagID)" . ((count($tagsIDs) - 1) == $i ? ';' : ','));
+    $sql = 'INSERT INTO `PostsTags` (`PostID`, `TagID`) VALUES';
+    foreach($tagsIDs as $i => $tagID) $sql .= (" ($postID, $tagID)" . ((count($tagsIDs) - 1) == $i ? ';' : ','));
 
     $MySQLDatabase->query($sql);
+
+    return 0;
 }
 
-// getFiles v0.0.1
-function getFiles(array $tags=[], array $formats=[], int $limit=20){
+function getPosts(array &$result, array $tags=[], int $limit=20, int $offset=0): int {
     global $MySQLDatabase;
 
     if( !isSignedIn() ) return 1;
 
     $userID = $_SESSION['migurdia']['userID'];
 
-    $sql = " SELECT                                                                                    "
-         . "   `Files`.`ID`,                                                                           "
-         . "   `Files`.`Name`,                                                                         "
-         . "   CONCAT(`ServersPaths`.`Path`, `Files`.`ServerPath`) AS `URL`                            "
-         . " FROM                                                                                      "
-         . "   (SELECT `TagID` FROM `UsersPermissions` WHERE `userID` = $userID) AS `UserPermissions`  "
-         . "   RIGHT JOIN `FilesTags`    ON `FilesTags`   .`TagID` = `UserPermissions`. `TagID`        "
-         . "   RIGHT JOIN `Files`        ON `Files`       .   `ID` = `FilesTags`      .`FileID`        "
-         . "   INNER JOIN `Tags`         ON `Tags`        .   `ID` = `FilesTags`      . `TagID`        "
-         . "   INNER JOIN `ServersPaths` ON `ServersPaths`.   `ID` = `Files`          .`StorageServer` "
-         . " GROUP BY                                                                                  "
-         . "   `Files`.`ID`                                                                            "
-         . " HAVING                                                                                    "
-         . "   (SUM(`Tags`.`RequiresPermission`) - COUNT(`UserPermissions`.`TagID`) = 0)               ";
+    $sql = "SELECT                                                                                                      "
+         . "  `Posts`.`ID`             AS `id`,                                                                         "
+         . "  `Posts`.`Name`           AS `name`,                                                                       "
+         . "  `FileHosting`.`URL`      AS `fileHosting`,                                                                "
+         . "  `Posts`.`FilePath`       AS `filePath`,                                                                   "
+         . "  `ThumbnailHosting`.`URL` AS `thumbnailHosting`,                                                           "
+         . "  `Posts`.`ThumbnailPath`  AS `thumbnailPath`                                                               "
+         . "FROM                                                                                                        "
+         . "  (SELECT `TagID` FROM `UsersPermissions` WHERE `userID` = $userID) AS `UserPermissions`                    "
+         . "  RIGHT JOIN `PostsTags` ON `PostsTags`.`TagID` = `UserPermissions` . `TagID`                               "
+         . "  RIGHT JOIN `Posts`     ON `Posts`    .   `ID` = `PostsTags`       .`PostID`                               "
+         . "  LEFT  JOIN `Tags`      ON `Tags`     .   `ID` = `PostsTags`       . `TagID`                               "
+         . "  LEFT  JOIN `Hostings`  AS      `FileHosting` ON      `FileHosting`.    `ID` = `Posts`.     `FileHosting`  "
+         . "  LEFT  JOIN `Hostings`  AS `ThumbnailHosting` ON `ThumbnailHosting`.    `ID` = `Posts`.`ThumbnailHosting`  "
+         . "GROUP BY                                                                                                    "
+         . "  `Posts`.`ID`                                                                                              "
+         . "HAVING                                                                                                      "
+         . "  (COALESCE(SUM(`Tags`.`RequiresPermission`), 0) - COUNT(`UserPermissions`.`TagID`) = 0)                    ";
 
     if( !empty($tags) ){
         if( isset($tags['unwanted']) ){
@@ -346,8 +351,8 @@ function getFiles(array $tags=[], array $formats=[], int $limit=20){
                 $unwantedTags .= $tag;
                 $unwantedTags .= ($lastKey == $key) ?  ')' : ',';
             }
-            
-            $sql .= "AND (SUM(IF(`FilesTags`.`TagID` IN $unwantedTags, 1, 0)) = 0)";
+
+            $sql .= "AND (SUM(IF(`PostsTags`.`TagID` IN $unwantedTags, 1, 0)) = 0)";
         }
 
         if( isset($tags['wanted']) ){
@@ -360,59 +365,26 @@ function getFiles(array $tags=[], array $formats=[], int $limit=20){
                 $wantedTags .=  $tag;
                 $wantedTags .= ($lastKey == $key) ?  ')' : ',';
             }
-            
-            $sql .= "ORDER BY SUM(IF(`FilesTags`.`TagID` IN $wantedTags, 1, 0)) DESC;";
+
+            $sql .= " ORDER BY SUM(IF(`PostsTags`.`TagID` IN $wantedTags, 1, 0)) DESC `Posts`.`ID` ASC ";
+        }else{
+            $sql .= " ORDER BY `Posts`.`ID` ASC ";
         }
+    }else{
+        $sql .= " ORDER BY `Posts`.`ID` ASC ";
     }
 
-    $sql .= " LIMIT $limit; ";
+    $sql .= " LIMIT $limit OFFSET $offset; ";
 
     $response = $MySQLDatabase->query($sql);
-    $result   = array();
 
-    if($response == false) return $result;
+    if($response == false) return 1;
 
     while( $row = $response->fetch_assoc() ) array_push($result, $row);
-
+    
     $response->free_result();
 
-    return $result;
-}
-
-//-------------------\
-// File format stuff |
-//-------------------/
-
-function getFileFormatProposals($hint, int $limit=20): array {
-    global $MySQLDatabase;
-    
-    $hint = $MySQLDatabase->real_escape_string($hint);
-
-    $sql = "SELECT * FROM `FileFormats` WHERE `format` LIKE \"%$hint%\" LIMIT $limit;";
-    
-    $response = $MySQLDatabase->query($sql);
-    $formats  = array();
-
-    while($row = $response->fetch_row())
-        array_push($formats, $row);
-
-    $response->free_result();
-
-    return $formats;
-}
-
-function checkFileFormat(string $MIME){
-    global $MySQLDatabase;
-
-    $sql = "SELECT `ID` from `FileFormats` WHERE `MIME` = '$MIME';";
-    $result = $MySQLDatabase->query($sql);
-
-    if($result->num_rows) return $result->fetch_assoc()['ID'];
-
-    $sql = "INSERT INTO `FileFormats` (`MIME`) VALUES ('$MIME');";
-    $MySQLDatabase->query($sql);
-
-    return $MySQLDatabase->insert_id;
+    return 0;
 }
 
 //-------------------------------\
@@ -422,31 +394,36 @@ function checkFileFormat(string $MIME){
 //-------------------------------/
 
 # connection purpose
-$cp = strtolower(requireField('method'));
+$cp = strtolower(requiredField('method'));
 
 switch($cp){
-	case 'getfiles':{
-        $tags = optionalField('tags', '[]');
-        $tags = json_decode  ($tags );
-        
+    case 'getposts':{
+        $tags   = optionalField('tags', '[]');
+        $amount = (int) optionalField('amount', 20);
+        $offset = (int) optionalField('offset', 0);
+
+        $tags   = json_decode($tags);
+        $amount = ($amount > 100) ? 100 : $amount;
+
         if( !is_array($tags) ) $tags = array();
 
-        $result = getFiles($tags);
- 
-        switch( $result ){
-            case  1: returnResult('Session expired.', 7); break;
+        $result   = array();
+        $exitCode = getPosts($result, $tags, $amount, $offset);
+
+        switch( $exitCode ){
+            case  0: returnResult($result               , 0); break;
+            case  1: returnResult('Session expired.'    , 7); break;
+            default: returnResult('Something went wrong', 1); break;
         }
 
-        returnResult($result);
-
-		break;
-	}
+        break;
+    }
     case 'signin':{
-        $username = requireField('username');
-        $password = requireField('password');
+        $username = requiredField('username');
+        $password = requiredField('password');
 
         switch ( signIn($username, $password) ) {
-            case 0:  returnResult(array("SID" => session_id()))                             ; break;
+            case 0:  returnResult(array("SID" => session_id()))               ; break;
             case 1:  returnResult('Cannot find user with such name/email.', 2); break;
             case 2:  returnResult('Wrong password.'                       , 3); break;
             default: returnResult('Unknown.'                              , 1); break;
@@ -455,15 +432,15 @@ switch($cp){
         break;
     }
     case 'signup':{
-        $username = requireField('username'); // This will be checked, obviously
-        $email    = requireField('email'   ); // Checked only by build-in PHP function cuz I'm lazy
-        $password = requireField('password'); // I won't check if null, if someone doesn't want to have password, I don't care
-        
+        $username = requiredField('username'); // This will be checked, obviously
+        $email    = requiredField('email'   ); // Checked only by build-in PHP function cuz I'm lazy
+        $password = requiredField('password'); // I won't check if null, if someone doesn't want to have password, I don't care
+
         if( !filter_var($email, FILTER_VALIDATE_EMAIL) )
             returnResult('Invalid email address.', 4);
 
         switch ( signup($username, $email, $password) ) {
-            case 0:  returnResult(array("SID" => session_id()))              ; break;
+            case 0:  returnResult(array("SID" => session_id())); break;
             case 1:  returnResult('Username already taken.', 5); break;
             case 2:  returnResult('Email already taken.'   , 6); break;
             default: returnResult('Unknown.'               , 1); break;
@@ -471,62 +448,51 @@ switch($cp){
 
         break;
     }
-	case 'gettagproposals':{
-		$hint         = optionalField('hint');
-		$proposedTags = getTagProposals($hint);
+    case 'gettagproposals':{
+        $hint   = requiredField('hint');
+        $amount = optionalField('amount', 10);
+        
+        $result   = array();
+        $exitCode = getTagProposals($result, $hint, $amount);
 
-        returnResult($proposedTags);
+        returnResult($result);
 
-		break;
-	}
-	case 'getfileformatproposals':{
-		$hint                = optionalField('hint');
-		$proposedFileFormats = getFileFormatProposals($hint);
-
-        returnResult($proposedFileFormats);
-
-		break;
-	}
-    case 'addFile':{
-        $files  = requireField('files');
-        $files  = json_decode ($files, true);
+        break;
+    }
+    case 'addposts':{
+        $posts  = requiredField('posts');
+        $posts  = json_decode ($posts, true);
         $result = array();
 
-        foreach($files as $file){
-            if( !isset($file['URL'        ]) ) { array_push($result, array('error')); continue; }
+        foreach($posts as $post){
+            if( !isset($post['fileUrl'     ]) ) { array_push($result, array('error')); continue; }
+            if( !isset($post['thumbnailUrl']) ) { array_push($result, array('error')); continue; }
+            if( !isset($post['tags'        ]) ) $post['tags'       ] = array();
+            if( !isset($post['name'        ]) ) $post['name'       ] = 'Untitled';
+            if( !isset($post['description' ]) ) $post['description'] = '';
 
-            if( !isset($file['tags'       ]) ) $file['tags'       ] = array(); 
-            if( !isset($file['name'       ]) ) $file['name'       ] = 'Untitled';
-            if( !isset($file['description']) ) $file['description'] = '';
-            if( !isset($file['author'     ]) ) $file['author'     ] = 1;
-
-            $success = addFile(
-                $file['name'],
-                $file['description'],
-                $file['URL'],
-                $file['author'],
-                $file['tags']
+            $success = addPost(
+                $post['name'],
+                $post['description'],
+                $post['fileUrl'],
+                $post['thumbnailUrl'],
+                $post['tags']
             );
 
-            switch($success){
-                case 1:  break;
-            }
-
             $tmp = array(
-                'suppliedURL' => $file['URL'],
-                'success' => $success,
-                'fileID'  => 0
+                'suppliedURL' => $post['fileUrl'],
+                'exitCode'    => $success
             );
 
             array_push($result, $tmp);
         }
 
         returnResult($result);
-        
+
         break;
     }
-    case 'signout': { session_destroy(); break; }
-	default: { returnResult("unknown connection purpose('$cp').", 1); break; }
+    case 'signout': { session_destroy(); returnResult([], 0); break; }
+    default: { returnResult("unknown connection purpose('$cp').", 1); break; }
 }
 
 exit;
